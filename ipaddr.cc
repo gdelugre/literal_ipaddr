@@ -19,8 +19,8 @@ static constexpr bool equals(struct in6_addr const& in6, ip6_addr_t const& addr)
 
 static_assert(std::is_same<decltype("127.0.0.1"_ipaddr), struct in_addr>::value);
 static_assert(std::is_same<decltype("::1"_ipaddr), struct in6_addr>::value);
-static_assert(IPAddr::inet_addr("1.2.3.4") == IPAddr::details::htonl(0x01020304));
-static_assert(IPAddr::inet_addr("127.0.0.1") == IPAddr::details::htonl(0x7F000001));
+static_assert(IPAddr::inet_addr("1.2.3.4") == IPAddr::details::host_to_net(0x01020304));
+static_assert(IPAddr::inet_addr("127.0.0.1") == IPAddr::details::host_to_net(0x7F000001));
 static_assert(IPAddr::inet_addr("0x7F.0.0.1") == IPAddr::inet_addr("127.0.0.1"));
 static_assert(IPAddr::inet_addr("0xc0.0XA8.1") == IPAddr::inet_addr("192.168.0.1"));
 static_assert(IPAddr::inet_addr("0x7f.1") == IPAddr::inet_addr("127.0.0.1"));
@@ -43,6 +43,7 @@ static_assert(equals(IPAddr::inet_pton<AF_INET6>("::1"), ip6_addr_t { 0, 0, 0, 0
 static_assert(equals(IPAddr::inet_pton<AF_INET6>("1::"), ip6_addr_t { 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }));
 static_assert(equals(IPAddr::inet_pton<AF_INET6>("1234:5678::1"), ip6_addr_t { 0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 }));
 static_assert(equals(IPAddr::inet_pton<AF_INET6>("0:0:0:0:0:0:0:0"), ip6_addr_t { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0 }));
+static_assert(equals(IPAddr::inet_pton<AF_INET6>("ffff::127.0.0.1"), ip6_addr_t { 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x7f, 0, 0, 1 }));
 static_assert(IPAddr::is_valid_ip6addr("") == false);
 static_assert(IPAddr::is_valid_ip6addr("1234") == false);
 static_assert(IPAddr::is_valid_ip6addr("12345::") == false);
@@ -53,6 +54,10 @@ static_assert(IPAddr::is_valid_ip6addr(" ::") == false);
 static_assert(IPAddr::is_valid_ip6addr(":: ") == false);
 static_assert(IPAddr::is_valid_ip6addr("xyz::") == false);
 static_assert(IPAddr::is_valid_ip6addr("0:0:0:0:0:0:0:0:0") == false);
+static_assert(IPAddr::is_valid_ip6addr("0:0:0:0:0:0:0:127.0.0.1") == false);
+static_assert(IPAddr::is_valid_ip6addr("0:0:0:0:0:0::127.0.0.1") == false);
+static_assert(IPAddr::is_valid_ip6addr("0:0:0:0:0:0:256.0.0.1") == false);
+static_assert(IPAddr::is_valid_ip6addr("0:0:0:0:0:127.0.0.1:0") == false);
 #endif
 
 int main() 

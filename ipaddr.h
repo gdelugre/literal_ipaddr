@@ -7,23 +7,27 @@
 #include <arpa/inet.h>
 
 namespace IPAddr {
-    
+
     namespace details {
 
-        static constexpr uint16_t htons(uint16_t hostshort)
+        template <typename T>
+        static constexpr T host_to_net(T hostval)
         {
+            static_assert(std::is_integral<T>::value && (sizeof(T) == 2 || sizeof(T) == 4));
+
             if constexpr ( __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__ )
-                return hostshort;
-            else
-                return __builtin_bswap16(hostshort);
+                return hostval;
+
+            if constexpr ( sizeof(T) == 2 )
+                return __builtin_bswap16(hostval);
+            else if constexpr ( sizeof(T) == 4 )
+                return __builtin_bswap32(hostval);
         }
 
-        static constexpr uint32_t htonl(uint32_t hostlong)
+        template <typename T>
+        static constexpr T net_to_host(T netval)
         {
-            if constexpr ( __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__ )
-                return hostlong;
-            else
-                return __builtin_bswap32(hostlong);
+            return host_to_net(netval);
         }
 
         static constexpr bool isdigit(char c)
@@ -115,7 +119,7 @@ namespace IPAddr {
             for ( size_t i = idx; i < N-1 && str[i] != sep; i++ )
             {
                 if ( max_length > 0 && (i - idx + 1) > max_length )
-                   return -1; 
+                   return -1;
 
                 if ( !is_valid_digit<base>(str[i]) )
                     return -1;
@@ -140,19 +144,19 @@ namespace IPAddr {
         static constexpr int parse_inet_component_oct(const char (&str)[N], size_t idx)
         {
             return parse_inet_component_base<8, max_value>(str, idx);
-        } 
+        }
 
         template <unsigned max_value, size_t N>
         static constexpr int parse_inet_component_dec(const char (&str)[N], size_t idx)
         {
             return parse_inet_component_base<10, max_value>(str, idx);
-        } 
+        }
 
         template <unsigned max_value, size_t N>
         static constexpr int parse_inet_component_hex(const char (&str)[N], size_t idx)
         {
             return parse_inet_component_base<16, max_value>(str, idx);
-        } 
+        }
 
         //
         // Parse a component of an IPv4 address.
@@ -171,7 +175,7 @@ namespace IPAddr {
         //
         // Parse a component of an IPv4 address in its canonical form.
         // Leading zeros are not allowed, and component must be expressed in decimal form.
-        // 
+        //
         template <size_t N>
         static constexpr int parse_inet_component_canonical(const char (&str)[N], size_t idx)
         {
@@ -187,24 +191,21 @@ namespace IPAddr {
         template <size_t N>
         static constexpr int parse_inet6_hexlet(const char (&str)[N], size_t idx)
         {
-            return parse_address_component<16, ':', 0xFFFF, 4>(str, idx);    
+            return parse_address_component<16, ':', 0xFFFF, 4>(str, idx);
         }
 
-        //
-        // Parse an IPv4 address in its canonical decimal form: ddd.ddd.ddd.ddd
-        //
         template <size_t N>
-        static constexpr int inet_addr_canonical(const char (&str)[N], in_addr_t& s_addr)
+        static constexpr int inet_addr_canonical_at(const char (&str)[N], ssize_t idx, in_addr_t& s_addr)
         {
             // Split and parse each component according to POSIX rules.
             ssize_t sep3 = rfind_chr(str, N-1, '.'),
                     sep2 = rfind_chr(str, sep3-1, '.'),
                     sep1 = rfind_chr(str, sep2-1, '.');
 
-            if ( sep3 < 1 || sep2 < 1 || sep1 < 1 || rfind_chr(str, sep1-1, '.' != -1) )
+            if ( sep3 < idx+1 || sep2 < idx+1 || sep1 < idx+1 || rfind_chr(str, sep1-1, '.') >= idx )
                 return -1;
 
-            long long c1 = parse_inet_component_canonical(str, 0),
+            long long c1 = parse_inet_component_canonical(str, idx),
                       c2 = parse_inet_component_canonical(str, sep1 + 1),
                       c3 = parse_inet_component_canonical(str, sep2 + 1),
                       c4 = parse_inet_component_canonical(str, sep3 + 1);
@@ -212,8 +213,14 @@ namespace IPAddr {
             if ( c1 < 0 || c1 < 0 || c2 < 0 || c3 < 0 )
                 return -1;
 
-            s_addr = htonl((c1 << 24) | (c2 << 16) | (c3 << 8) | c4);
+            s_addr = host_to_net(static_cast<uint32_t>((c1 << 24) | (c2 << 16) | (c3 << 8) | c4));
             return 0;
+        }
+
+        template <size_t N>
+        static constexpr int inet_addr_canonical(const char (&str)[N], in_addr_t& s_addr)
+        {
+            return inet_addr_canonical_at(str, 0, s_addr);
         }
 
         //
@@ -261,7 +268,7 @@ namespace IPAddr {
             if ( c1 < 0 || c2 < 0 || c3 < 0 || c4 < 0 )
                 return -1;
 
-            s_addr = htonl((c1 << 24) | (c2 << 16) | (c3 << 8) | c4);
+            s_addr = host_to_net(static_cast<uint32_t>((c1 << 24) | (c2 << 16) | (c3 << 8) | c4));
             return 0;
         }
 
@@ -282,7 +289,7 @@ namespace IPAddr {
             for ( size_t i = 0; i < ip6_comps.size(); i++ ) {
                 uint16_t hexlet = ip6_comps[i];
 
-                in6.s6_addr[i * 2] = hexlet >> 8; 
+                in6.s6_addr[i * 2] = hexlet >> 8;
                 in6.s6_addr[i * 2 + 1] = hexlet & 0xff;
             }
         }
@@ -316,12 +323,13 @@ namespace IPAddr {
             std::array<uint16_t, 8> comps = { 0 };
             int shortener_pos = -1;
             size_t idx = 0;
+            in_addr_t v4_addr = -1;
             auto remaining_chars = [](size_t pos) constexpr { return N - 1 - pos; };
 
             // The address must contain at least two chars, cannot start/end with a separator alone.
             if ( N < 3 || (str[0] == ':' && str[1] != ':') || (str[N-1] == ':' && str[N-2] != ':') )
                 return -1;
-           
+
             for ( unsigned i = 0; i < comps.size(); i++ ) {
 
                 // We have reached the end of the string before parsing all the components.
@@ -333,6 +341,21 @@ namespace IPAddr {
                         rshift_array(comps, shortener_pos, comps.size() - i);
                         break;
                     }
+                }
+
+                // Check if we have an embedded IPv4 address.
+                if ( (i == 6 || (i < 6 && shortener_pos != -1)) && inet_addr_canonical_at(str, idx, v4_addr) != -1 )
+                {
+                    v4_addr = net_to_host(v4_addr);
+
+                    comps[i++] = (v4_addr >> 16) & 0xffff;
+                    comps[i++] = v4_addr & 0xffff;
+
+                    if ( shortener_pos != -1 )
+                        rshift_array(comps, shortener_pos, comps.size() - i);
+
+                    idx = N - 1;
+                    break;
                 }
 
                 // A shortener token (::) is encountered.
@@ -360,8 +383,9 @@ namespace IPAddr {
                     comps[i] = hexlet;
 
                     ssize_t next_sep = find_chr(str, idx, ':');
-                    if ( next_sep == -1 )
+                    if ( next_sep == -1 ) {
                         idx = N-1;
+                    }
                     else if ( remaining_chars(next_sep) >= 2 && str[next_sep+1] == ':' ) {
                         idx = next_sep;
                     }
@@ -370,7 +394,7 @@ namespace IPAddr {
                     }
                 }
             }
-            
+
             // Once all components have been parsed, we must be pointing at the end of the string.
             if ( idx != N-1 )
                 return -1;
@@ -406,7 +430,7 @@ namespace IPAddr {
         if constexpr (AddressF == AF_INET ) {
             struct in_addr in = {};
             details::inet_aton_canonical(str, in);
-            
+
             return in;
         }
         else {
@@ -453,7 +477,7 @@ static constexpr uint16_t operator "" _ipport(unsigned long long port)
     if ( port > 65535 )
         return 0;
 
-    return IPAddr::details::htons(port);
+    return IPAddr::details::host_to_net(static_cast<uint16_t>(port));
 }
 
 #endif
