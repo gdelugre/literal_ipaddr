@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <sys/socket.h>
 #include "ipaddr.h"
 
 int main() 
