@@ -315,7 +315,7 @@ namespace IPAddr {
         // Format can be:
         //  1. x:x:x:x:x:x:x:x with each component being a 16-bit hexadecimal number
         //  2. Contiguous zero components can be compacted as "::", allowed to appear only once in the address.
-        //  3. TODO: IPv4 suffix is not supported.
+        //  3. First 96 bits in above representation and last 32 bits represented as an IPv4 address.
         //
         template <size_t N>
         static constexpr int inet6_aton(const char (&str)[N], struct in6_addr& in6)
